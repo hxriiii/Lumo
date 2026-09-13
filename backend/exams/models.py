@@ -17,6 +17,11 @@ class Question(models.Model):
     explanation = models.TextField()
     concept_tag = models.CharField(max_length=100, blank=True, default='')
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['topic', 'difficulty']),
+        ]
+
     def __str__(self):
         return f"[{self.topic.name} | {self.difficulty}] {self.text[:50]}"
 

@@ -42,3 +42,37 @@ class QuestionResult(models.Model):
     selected_option = models.CharField(max_length=255)
     correct_option = models.CharField(max_length=255)
     is_correct = models.BooleanField(default=False)
+
+class SubjectProgress(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subject_progresses')
+    subject = models.ForeignKey('subjects.Subject', on_delete=models.CASCADE, related_name='progresses')
+    overall_mastery = models.FloatField(default=0.0)
+    topics_completed = models.IntegerField(default=0)
+    total_topics = models.IntegerField(default=0)
+    total_tests_taken = models.IntegerField(default=0)
+    status = models.CharField(max_length=20, default='in_progress')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = 'Subject Progresses'
+        unique_together = ('student', 'subject')
+
+    def __str__(self):
+        return f"{self.student.username} - {self.subject.name}: {self.overall_mastery}%"
+
+class ConceptMastery(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='concept_masteries')
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='concept_masteries')
+    concept_tag = models.CharField(max_length=100)
+    correct_count = models.IntegerField(default=0)
+    total_count = models.IntegerField(default=0)
+    mastery_score = models.FloatField(default=0.0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = 'Concept Masteries'
+        unique_together = ('student', 'topic', 'concept_tag')
+
+    def __str__(self):
+        return f"{self.student.username} - {self.concept_tag}: {self.mastery_score}%"
+

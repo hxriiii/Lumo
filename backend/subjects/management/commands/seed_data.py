@@ -1,7 +1,8 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from accounts.models import StudentProfile
-from subjects.models import Subject, Topic
+from subjects.models import Subject, Module, Topic, ModuleDocument
+from mentor.models import SubjectMentor
 from exams.models import Question
 
 class Command(BaseCommand):
@@ -44,12 +45,12 @@ class Command(BaseCommand):
             m_profile.save()
             self.stdout.write(self.style.SUCCESS("Created demo mentor 'mentor_prof' (password: password123)"))
 
-        # Subjects
+        # Subjects (No UI icons in DB)
         subjects_data = [
-            {"name": "Physics", "icon": "Zap", "description": "Study of matter, energy, motion, and fundamental forces."},
-            {"name": "Computer Science", "icon": "Code", "description": "Algorithms, data structures, and software architecture."},
-            {"name": "Mathematics", "icon": "Calculator", "description": "Calculus, linear algebra, and mathematical logic."},
-            {"name": "Chemistry", "icon": "FlaskConical", "description": "Atomic structure, chemical reactions, and thermochemistry."},
+            {"name": "Physics", "description": "Study of matter, energy, motion, and fundamental forces."},
+            {"name": "Computer Science", "description": "Algorithms, data structures, and software architecture."},
+            {"name": "Mathematics", "description": "Calculus, linear algebra, and mathematical logic."},
+            {"name": "Chemistry", "description": "Atomic structure, chemical reactions, and thermochemistry."},
         ]
 
         subject_objs = {}
@@ -57,33 +58,119 @@ class Command(BaseCommand):
             obj, _ = Subject.objects.get_or_create(name=s["name"], defaults=s)
             subject_objs[s["name"]] = obj
 
+        # Subject-Based Mentor Assignments
+        SubjectMentor.objects.get_or_create(
+            mentor=mentor_user,
+            subject=subject_objs["Physics"],
+            defaults={
+                "bio": "Professor of Applied Physics with 12 years of experience in Electromagnetism.",
+                "max_students": 15
+            }
+        )
+        SubjectMentor.objects.get_or_create(
+            mentor=mentor_user,
+            subject=subject_objs["Computer Science"],
+            defaults={
+                "bio": "Lead Software Architect & Educator in Systems and Data Structures.",
+                "max_students": 15
+            }
+        )
+
         # Set default subjects for Alex
         alex_profile = alex.profile
         alex_profile.selected_subjects.set([subject_objs["Physics"], subject_objs["Computer Science"], subject_objs["Mathematics"]])
 
-        # Topics
-        topics_data = [
+        # Modules (Subject -> Module)
+        modules_data = [
             # Physics
-            {"subject": "Physics", "name": "Mechanics", "order": 1, "description": "Kinematics, Newton's laws, energy, and momentum."},
-            {"subject": "Physics", "name": "Thermodynamics", "order": 2, "description": "Heat transfer, entropy, and laws of thermodynamics."},
-            {"subject": "Physics", "name": "Electromagnetism", "order": 3, "description": "Electric fields, Ohm's law, magnetic flux, and Faraday's law."},
+            {"subject": "Physics", "name": "Classical Mechanics", "order": 1, "description": "Kinematics, Newton's laws, energy, and momentum."},
+            {"subject": "Physics", "name": "Thermal Physics", "order": 2, "description": "Heat transfer, entropy, and laws of thermodynamics."},
+            {"subject": "Physics", "name": "Electromagnetism & Circuits", "order": 3, "description": "Electric fields, Ohm's law, magnetic flux, and Faraday's law."},
             
             # Computer Science
-            {"subject": "Computer Science", "name": "Data Structures", "order": 1, "description": "Arrays, Linked Lists, Trees, Graphs, and Hash Tables."},
-            {"subject": "Computer Science", "name": "Algorithms", "order": 2, "description": "Sorting, Searching, Dynamic Programming, and Graph Traversals."},
-            {"subject": "Computer Science", "name": "Web Development", "order": 3, "description": "HTTP, REST APIs, Frontend frameworks, and Databases."},
+            {"subject": "Computer Science", "name": "Data Structures & Foundations", "order": 1, "description": "Arrays, Linked Lists, Trees, Graphs, and Hash Tables."},
+            {"subject": "Computer Science", "name": "Algorithmic Problem Solving", "order": 2, "description": "Sorting, Searching, Dynamic Programming, and Graph Traversals."},
+            {"subject": "Computer Science", "name": "Full Stack Web Systems", "order": 3, "description": "HTTP, REST APIs, Frontend frameworks, and Databases."},
 
             # Mathematics
-            {"subject": "Mathematics", "name": "Calculus", "order": 1, "description": "Limits, derivatives, integrals, and differential equations."},
-            {"subject": "Mathematics", "name": "Linear Algebra", "order": 2, "description": "Vectors, matrices, eigenvalues, and linear transformations."},
-            {"subject": "Mathematics", "name": "Statistics", "order": 3, "description": "Probability distributions, hypothesis testing, and regression."},
+            {"subject": "Mathematics", "name": "Calculus & Analysis", "order": 1, "description": "Limits, derivatives, integrals, and differential equations."},
+            {"subject": "Mathematics", "name": "Linear Algebra & Matrices", "order": 2, "description": "Vectors, matrices, eigenvalues, and linear transformations."},
+            {"subject": "Mathematics", "name": "Probability & Statistics", "order": 3, "description": "Probability distributions, hypothesis testing, and regression."},
+        ]
+
+        module_objs = {}
+        for m in modules_data:
+            sub = subject_objs[m["subject"]]
+            obj, _ = Module.objects.get_or_create(
+                subject=sub,
+                name=m["name"],
+                defaults={"order": m["order"], "description": m["description"]}
+            )
+            module_objs[m["name"]] = obj
+
+        # Topics (Module -> Topic)
+        topics_data = [
+            # Physics
+            {"module": "Classical Mechanics", "name": "Mechanics", "order": 1, "description": "Kinematics, Newton's laws, energy, and momentum."},
+            {"module": "Thermal Physics", "name": "Thermodynamics", "order": 1, "description": "Heat transfer, entropy, and laws of thermodynamics."},
+            {"module": "Electromagnetism & Circuits", "name": "Electromagnetism", "order": 1, "description": "Electric fields, Ohm's law, magnetic flux, and Faraday's law."},
+            
+            # Computer Science
+            {"module": "Data Structures & Foundations", "name": "Data Structures", "order": 1, "description": "Arrays, Linked Lists, Trees, Graphs, and Hash Tables."},
+            {"module": "Algorithmic Problem Solving", "name": "Algorithms", "order": 1, "description": "Sorting, Searching, Dynamic Programming, and Graph Traversals."},
+            {"module": "Full Stack Web Systems", "name": "Web Development", "order": 1, "description": "HTTP, REST APIs, Frontend frameworks, and Databases."},
+
+            # Mathematics
+            {"module": "Calculus & Analysis", "name": "Calculus", "order": 1, "description": "Limits, derivatives, integrals, and differential equations."},
+            {"module": "Linear Algebra & Matrices", "name": "Linear Algebra", "order": 1, "description": "Vectors, matrices, eigenvalues, and linear transformations."},
+            {"module": "Probability & Statistics", "name": "Statistics", "order": 1, "description": "Probability distributions, hypothesis testing, and regression."},
         ]
 
         topic_objs = {}
         for t in topics_data:
-            sub = subject_objs[t["subject"]]
-            obj, _ = Topic.objects.get_or_create(subject=sub, name=t["name"], defaults={"order": t["order"], "description": t["description"]})
+            mod = module_objs[t["module"]]
+            obj, _ = Topic.objects.get_or_create(
+                module=mod,
+                name=t["name"],
+                defaults={"order": t["order"], "description": t["description"]}
+            )
             topic_objs[t["name"]] = obj
+
+        # Module-Based Learning Documents (PDFs for RAG)
+        em_module = module_objs["Electromagnetism & Circuits"]
+        ModuleDocument.objects.get_or_create(
+            module=em_module,
+            title="Electromagnetism Comprehensive Study Notes",
+            defaults={
+                "file_path": "learning_materials/pdfs/electromagnetism_notes.pdf",
+                "document_type": "notes",
+                "indexing_status": "indexed",
+                "file_size_bytes": 2457600
+            }
+        )
+        ModuleDocument.objects.get_or_create(
+            module=em_module,
+            title="Circuit Laws and Ohm's Law Quick Reference",
+            defaults={
+                "file_path": "learning_materials/pdfs/circuit_laws_ref.pdf",
+                "document_type": "cheatsheet",
+                "indexing_status": "indexed",
+                "file_size_bytes": 1048576
+            }
+        )
+
+        cs_module = module_objs["Data Structures & Foundations"]
+        ModuleDocument.objects.get_or_create(
+            module=cs_module,
+            title="Data Structures & Algorithms Cheat Sheet",
+            defaults={
+                "file_path": "learning_materials/pdfs/data_structures_cheatsheet.pdf",
+                "document_type": "cheatsheet",
+                "indexing_status": "pending",
+                "file_size_bytes": 1820000
+            }
+        )
+
 
         # Seed Questions for Electromagnetism (Physics)
         em_topic = topic_objs["Electromagnetism"]
