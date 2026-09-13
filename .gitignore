@@ -26,6 +26,8 @@ db.sqlite3
 backend/db.sqlite3
 media/
 backend/media/
+documents/
+backend/documents/
 
 # OS / IDE
 .DS_Store

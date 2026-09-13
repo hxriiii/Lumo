@@ -18,7 +18,7 @@ export const getDocuments = async (params = {}) => {
 export const uploadDocument = async (formData) => {
   const response = await api.post('/subjects/admin/documents/', formData, {
     headers: {
-      'Content-Type': 'multipart/form-data',
+      'Content-Type': undefined,
     },
   });
   return response.data;

@@ -149,7 +149,7 @@ export const AdminRAG = () => {
       }
 
       const res = await uploadDocument(formData);
-      showToast(`Successfully ingested "${res.title}" into ${res.chunk_count} RAG chunks!`);
+      showToast(res.message || `Successfully ingested "${res.title}" and generated questions for students!`);
       
       // Reset form
       setDocTitle('');
@@ -230,7 +230,7 @@ export const AdminRAG = () => {
               Document Note Ingestion & Admin Portal
             </h1>
             <p className="text-slate-400 max-w-2xl text-sm sm:text-base">
-              Upload PDF study guides, lecture notes, or textbooks. The RAG engine chunks and indexes your documents, empowering AI-driven generation of <strong className="text-amber-300">Easy</strong>, <strong className="text-sky-300">Medium</strong>, and <strong className="text-rose-400">Hard</strong> assessment questions.
+              Upload PDF study guides, lecture notes, or textbooks. The RAG engine chunks and indexes your documents, empowering automated generation of <strong className="text-amber-300">Easy</strong>, <strong className="text-sky-300">Medium</strong>, and <strong className="text-rose-400">Hard</strong> assessment questions.
             </p>
 
             {/* Quick Metrics Bar */}
@@ -425,12 +425,12 @@ export const AdminRAG = () => {
                   {isUploading ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Extracting & Chunking...</span>
+                      <span>Ingesting Notes & Generating Questions...</span>
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      <span>Ingest into RAG Knowledge Base</span>
+                      <span>Ingest & Generate Questions for Students</span>
                     </>
                   )}
                 </button>
@@ -540,7 +540,7 @@ export const AdminRAG = () => {
                     className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2.5 text-sm font-bold text-white placeholder-slate-600 outline-none"
                   />
                   <p className="text-[11px] text-indigo-300/80 mt-1">
-                    Queries vector/text RAG chunks first, then passes matching context to LLM for target questions.
+                    Queries study notes first, then automatically synthesizes target assessment questions.
                   </p>
                 </div>
 

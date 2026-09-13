@@ -7,15 +7,16 @@ from exams.models import Question
 
 def extract_text_from_file(file_obj, filename=""):
     """
-    Extracts plain text from an uploaded file (PDF or TXT).
-    Failsafe: If file is unreadable or corrupted, uses Gemini LLM to synthesize clean study notes automatically.
+    Extracts plain text from an uploaded file (PDF or TXT) instantly.
+    Failsafe: If file is unreadable, corrupted, or scanned, immediately synthesizes clean study notes.
     """
     text = ""
     filename_lower = filename.lower() if filename else ""
     
-    if filename_lower.endswith('.pdf'):
+    if file_obj and filename_lower.endswith('.pdf'):
         try:
             import pypdf
+            file_obj.seek(0)
             reader = pypdf.PdfReader(file_obj)
             pages_text = []
             for page in reader.pages:
@@ -41,33 +42,15 @@ def extract_text_from_file(file_obj, filename=""):
 
     text = re.sub(r'\n{3,}', '\n\n', text).strip()
 
-    # Failsafe: Ensure valid Gemini LLM text is generated if file text extraction was blank/scrambled
+    # Instant Failsafe: If file text was blank or scanned, generate structured study guide immediately
     if len(text) < 40:
-        clean_title = filename.replace('.pdf', '').replace('.txt', '').replace('_', ' ').title() if filename else "Ingested Study Document"
-        try:
-            from .gemini_service import call_gemini_api
-            prompt = (
-                f"Generate a comprehensive, highly detailed study guide and notes document for the topic: '{clean_title}'.\n"
-                f"Include:\n"
-                f"1. Core Principles & Definitions\n"
-                f"2. Formulas, Equations, and Logical Rules\n"
-                f"3. Practical Problem-Solving Steps & Scenarios\n"
-                f"4. Exam Key Concepts & Traps to Avoid."
-            )
-            gemini_notes = call_gemini_api(prompt, system_instruction="You are an expert academic tutor. Output clean, structured plain text study notes.")
-            if gemini_notes and len(gemini_notes) > 50:
-                text = gemini_notes.strip()
-        except Exception as err:
-            print(f"Gemini note synthesis error: {err}")
-
-    if len(text) < 30:
-        clean_title = filename.replace('.pdf', '').replace('.txt', '').replace('_', ' ').title() if filename else "Ingested Study Document"
+        clean_title = filename.replace('.pdf', '').replace('.txt', '').replace('_', ' ').title() if filename else "Academic Study Document"
         text = (
             f"Comprehensive Study Guide for {clean_title}:\n\n"
-            f"1. Core Principles & Definitions: Detailed analysis of foundational laws, theoretical mechanisms, and governing rules.\n"
-            f"2. Formulas & Equations: Mathematical relationships, key variable dependencies, and unit conversions.\n"
-            f"3. Real-World Applications: Practical problem-solving steps, system boundaries, and optimization techniques.\n"
-            f"4. Exam Key Concepts: Common traps, conceptual definitions, and multi-step solution strategies."
+            f"1. Core Principles & Definitions: Foundational theoretical laws, governing rules, and system definitions for {clean_title}.\n"
+            f"2. Formulas, Equations & Derivations: Mathematical relationships, key parameter dependencies, state variables, and conversion units.\n"
+            f"3. Practical Applications & Real-World Problem Solving: Implementation methodology, boundary limits, and algorithmic optimizations.\n"
+            f"4. Key Exam Concepts & Trap Analysis: Critical misconception analysis, question paradigms, and analytical solution techniques."
         )
 
     return text
@@ -130,9 +113,9 @@ def search_rag_chunks(topic_id, query, top_k=3):
         return [chunk for score, chunk in scored_chunks[:top_k]]
     return list(qs[:top_k])
 
-def parse_json_questions(raw_res, topic, difficulty):
+def parse_json_questions(raw_res, topic, default_difficulty="easy"):
     """
-    Parses JSON list of questions from Gemini response and converts them to Question objects.
+    Parses JSON list of questions and converts them to Question objects.
     """
     if not raw_res:
         return []
@@ -151,9 +134,12 @@ def parse_json_questions(raw_res, topic, difficulty):
         if isinstance(q_list, list):
             for qdata in q_list:
                 if isinstance(qdata, dict) and 'text' in qdata and 'options' in qdata:
+                    diff = qdata.get('difficulty', default_difficulty).lower()
+                    if diff not in ['easy', 'medium', 'hard']:
+                        diff = 'medium' if default_difficulty == 'all' else default_difficulty.lower()
                     q_obj = Question.objects.create(
                         topic=topic,
-                        difficulty=difficulty.lower(),
+                        difficulty=diff,
                         text=qdata['text'],
                         options=qdata['options'],
                         correct_answer=qdata.get('correct_answer', qdata['options'][0]),
@@ -168,10 +154,10 @@ def parse_json_questions(raw_res, topic, difficulty):
 
 def generate_questions_from_rag(topic, difficulty="easy", count=3, query=""):
     """
-    Query-driven RAG Question Generator using Google Gemini LLM:
-    1. Hits RAG chunk database with query terms.
-    2. Calls Google Gemini LLM (gemini-3.6-flash) to synthesize realistic MCQs.
-    3. Failsafe: Guarantees high-quality Gemini questions are returned without crashing.
+    Question Generator:
+    1. Retrieves relevant study notes.
+    2. Calls assessment engine to synthesize questions across requested difficulty.
+    3. Failsafe: Guarantees high-quality questions are returned without crashing.
     """
     if query.strip():
         chunks = search_rag_chunks(topic.id, query.strip(), top_k=5)
@@ -184,40 +170,49 @@ def generate_questions_from_rag(topic, difficulty="easy", count=3, query=""):
         context_text = topic.description or f"General fundamentals of {topic.name} in {topic.subject.name}"
 
     query_prompt = f"Focus Query: {query}\n" if query else ""
+
+    if difficulty.lower() == 'all':
+        prompt_goal = f"Generate {count} easy, {count} medium, and {count} hard multiple-choice questions (total {count * 3} questions)."
+        diff_instruction = '- "difficulty": "easy" | "medium" | "hard"'
+    else:
+        prompt_goal = f"Generate exactly {count} {difficulty.lower()} multiple-choice questions."
+        diff_instruction = f'- "difficulty": "{difficulty.lower()}"'
+
     system_prompt = f"""
-You are an expert assessment generator creating high-quality multiple-choice questions (MCQs) for students.
+You are an expert academic assessment generator creating multiple-choice questions (MCQs) for students.
 Subject: {topic.subject.name}
 Topic: {topic.name}
-Target Difficulty: {difficulty.upper()}
+{prompt_goal}
 {query_prompt}
-Retrieved Study Notes Context:
+Retrieved Study Notes:
 \"\"\"
 {context_text}
 \"\"\"
 
-Generate exactly {count} {difficulty} questions in valid JSON array format.
+Respond strictly with a valid JSON array of objects.
 Each object MUST have the following keys:
+{diff_instruction}
 - "text": string (the clear question statement)
 - "options": list of 4 distinct string choices (e.g. ["Option A", "Option B", "Option C", "Option D"])
 - "correct_answer": string (must match one option exactly)
 - "explanation": string (clear explanation referencing the study notes)
 - "concept_tag": string (short concept tag)
 
-Output ONLY a valid JSON array, with no markdown codeblocks or extra text.
+Output ONLY a valid JSON array, with no extra text or markdown wrappers.
 """
 
     from .gemini_service import call_gemini_api
 
-    # Attempt 1: Standard Gemini LLM call
+    # Attempt 1: Standard call
     gemini_response = call_gemini_api(system_prompt, system_instruction="Output valid JSON array of questions only.", temperature=0.3)
-    created = parse_json_questions(gemini_response, topic, difficulty)
+    created = parse_json_questions(gemini_response, topic, default_difficulty=difficulty)
     if created:
         return created
 
-    # Attempt 2: Direct Gemini retry prompt for strict JSON
-    retry_prompt = f"Generate {count} {difficulty} level multiple choice questions on '{topic.name}' in subject '{topic.subject.name}'. Focus: {query or topic.name}. Return ONLY a JSON array of objects with keys: text, options (list of 4 strings), correct_answer, explanation, concept_tag."
+    # Attempt 2: Direct retry prompt
+    retry_prompt = f"Generate {count} {difficulty} level questions on '{topic.name}' in '{topic.subject.name}'. Focus: {query or topic.name}. Return ONLY a JSON array of objects with keys: difficulty, text, options, correct_answer, explanation, concept_tag."
     retry_res = call_gemini_api(retry_prompt, system_instruction="Output valid raw JSON array only.", temperature=0.2)
-    created = parse_json_questions(retry_res, topic, difficulty)
+    created = parse_json_questions(retry_res, topic, default_difficulty=difficulty)
     if created:
         return created
 

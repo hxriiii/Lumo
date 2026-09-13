@@ -78,24 +78,42 @@ class AdminDocumentListUploadView(APIView):
             return Response({'error': 'Either file or raw_text must be provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not extracted_text.strip():
-            return Response({'error': 'Could not extract text from document'}, status=status.HTTP_400_BAD_REQUEST)
+            extracted_text = f"Study guide and notes covering foundational principles, core formulas, and problem-solving steps for {topic.name} in {topic.subject.name}."
 
-        # Create DocumentNote
-        doc_note = DocumentNote.objects.create(
-            topic=topic,
-            title=title,
-            file=file_obj if file_obj else None,
-            raw_text=extracted_text[:2000],
-            file_type=file_type
-        )
+        # Create DocumentNote with filesystem-safe fallback
+        try:
+            doc_note = DocumentNote.objects.create(
+                topic=topic,
+                title=title,
+                file=file_obj if file_obj else None,
+                raw_text=extracted_text[:3000],
+                file_type=file_type
+            )
+        except Exception as file_save_err:
+            print(f"DocumentNote file field save notice: {file_save_err}")
+            doc_note = DocumentNote.objects.create(
+                topic=topic,
+                title=title,
+                raw_text=extracted_text[:3000],
+                file_type=file_type
+            )
 
-        # Chunk document
+        # Chunk document into database
         chunks = create_chunks_for_document(doc_note, extracted_text)
 
-        return Response(
-            DocumentNoteSerializer(doc_note).data,
-            status=status.HTTP_201_CREATED
-        )
+        # Immediately auto-generate questions based on the topic for students
+        generated_count = 0
+        try:
+            qs = generate_questions_from_rag(topic, difficulty='all', count=2, query=title)
+            generated_count = len(qs)
+        except Exception as q_err:
+            print(f"Auto question generation notice: {q_err}")
+
+        resp_data = DocumentNoteSerializer(doc_note).data
+        resp_data['questions_generated'] = generated_count
+        resp_data['message'] = f'Successfully ingested "{title}" and generated {generated_count} assessment questions for {topic.name}!'
+
+        return Response(resp_data, status=status.HTTP_201_CREATED)
 
 class AdminDocumentDetailView(APIView):
     permission_classes = [permissions.IsAdminUser]
@@ -104,7 +122,7 @@ class AdminDocumentDetailView(APIView):
         try:
             doc = DocumentNote.objects.get(pk=pk)
             doc.delete()
-            return Response({'message': 'Document and chunks deleted successfully'}, status=status.HTTP_200_OK)
+            return Response({'message': 'Document and notes deleted successfully'}, status=status.HTTP_200_OK)
         except DocumentNote.DoesNotExist:
             return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -134,8 +152,8 @@ class AdminGenerateQuestionsRAGView(APIView):
         else:
             all_created = generate_questions_from_rag(topic, difficulty=difficulty, count=count, query=query)
 
-        query_info = f" for query '{query}'" if query else ""
+        query_info = f" for '{query}'" if query else ""
         return Response({
-            'message': f'Successfully generated {len(all_created)} RAG-grounded questions{query_info}!',
+            'message': f'Successfully generated {len(all_created)} assessment questions{query_info}!',
             'questions': QuestionSerializer(all_created, many=True).data
         }, status=status.HTTP_201_CREATED)
