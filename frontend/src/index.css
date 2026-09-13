@@ -2,22 +2,67 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+}
+
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: #FAF8F5;
+  color: #1E293B;
+}
+
+h1, h2, h3, .font-display {
+  font-family: 'Fredoka', 'Plus Jakarta Sans', sans-serif;
 }
 
 /* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #F1F5F9;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
+  background: #CBD5E1;
+  border-radius: 9999px;
+  border: 2px solid #F1F5F9;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #94A3B8;
+}
+
+@keyframes float-subtle {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-float {
+  animation: float-subtle 4s ease-in-out infinite;
+}
+
+.btn-pop-yellow {
+  background-color: #FFD12E;
+  color: #1E293B;
+  border: 2px solid #1E293B;
+  box-shadow: 3px 3px 0px 0px #1E293B;
+  transition: all 0.15s ease-in-out;
+}
+.btn-pop-yellow:hover {
+  background-color: #F0C21A;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px 0px #1E293B;
+}
+.btn-pop-yellow:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px 0px #1E293B;
 }
