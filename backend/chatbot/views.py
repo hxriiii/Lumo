@@ -1,4 +1,5 @@
 import json
+import re
 import requests
 from django.conf import settings
 from rest_framework.views import APIView
@@ -42,6 +43,19 @@ class ChatView(APIView):
             text=user_message_text
         )
 
+        # Retrieve past conversation turns for memory context (up to 10 past messages)
+        past_qs = ChatMessage.objects.filter(student=request.user)
+        if topic:
+            past_qs = past_qs.filter(topic=topic)
+        
+        past_messages = list(past_qs.exclude(id=student_msg.id).order_by('-created_at')[:10])
+        past_messages.reverse() # Chronological order
+
+        chat_history = [
+            {'role': 'user' if m.sender == 'student' else 'model', 'text': m.text}
+            for m in past_messages
+        ]
+
         # Build Context for AI Tutor
         context = {
             'student_name': request.user.get_full_name() or request.user.username,
@@ -66,8 +80,14 @@ class ChatView(APIView):
                 context['weak_areas'] = latest_decision.weak_areas
                 context['latest_decision'] = latest_decision.decision
 
-        # Generate response using Grok or Fallback
-        bot_response_text = self._generate_ai_response(user_message_text, context)
+            # Retrieve RAG note chunks for topic matching user query
+            from subjects.rag_service import search_rag_chunks
+            rag_chunks = search_rag_chunks(topic.id, user_message_text, top_k=3)
+            if rag_chunks:
+                context['rag_notes'] = [c.content for c in rag_chunks]
+
+        # Generate response using Gemini with History or Fallback
+        bot_response_text = self._generate_ai_response(user_message_text, context, chat_history)
 
         # Save assistant message
         assistant_msg = ChatMessage.objects.create(
@@ -82,25 +102,34 @@ class ChatView(APIView):
             'assistant_message': ChatMessageSerializer(assistant_msg).data
         })
 
-    def _generate_ai_response(self, user_prompt, context):
+    def _generate_ai_response(self, user_prompt, context, chat_history=None):
+        chat_history = chat_history or []
         rag_str = "\n".join(context.get('rag_notes', []))
         rag_context_prompt = f"\nRelevant RAG Study Notes Context:\n{rag_str}\n" if rag_str else ""
 
         system_prompt = f"""
-You are the Lumo Gemini AI Learning Coach, an empathetic, encouraging, and highly effective AI tutor companion.
+You are the Lumo Gemini AI Learning Coach, a friendly, intelligent, empathetic, and highly effective AI tutor.
 Student Name: {context.get('student_name')}
 Topic: {context.get('topic_name')} ({context.get('subject_name')})
 Topic Mastery Level: {context.get('mastery_score', 'N/A')}%
 Current Difficulty Level: {context.get('difficulty', 'N/A')}
 Identified Weak Areas: {', '.join(context.get('weak_areas', []))}
 {rag_context_prompt}
-Your goal: Provide clear, concise, step-by-step explanations, helpful hints, or tailored practice question hints based on the student's question and relevant study notes.
-Keep your response engaging, easy to follow, and directly relevant to the student's learning query.
+Important Rules:
+1. Maintain active conversation memory. Acknowledge and remember what the student previously said in past messages.
+2. Answer calculations, math queries, conceptual questions, or general conversation directly and accurately.
+3. Provide clear, step-by-step guidance tailored to the student's learning query.
+4. Do NOT repeat a generic hello/welcome template if you are already in an ongoing conversation.
 """
 
-        # Priority 1: Google Gemini API Call
-        from subjects.gemini_service import call_gemini_api
-        gemini_reply = call_gemini_api(user_prompt, system_instruction=system_prompt, temperature=0.5)
+        # Priority 1: Google Gemini API Call with Chat History Memory
+        from subjects.gemini_service import call_gemini_chat_with_history
+        gemini_reply = call_gemini_chat_with_history(
+            system_instruction=system_prompt,
+            chat_history=chat_history,
+            current_user_text=user_prompt,
+            temperature=0.5
+        )
         if gemini_reply:
             return gemini_reply.strip()
 
@@ -109,13 +138,18 @@ Keep your response engaging, easy to follow, and directly relevant to the studen
         api_url = getattr(settings, 'GROK_API_URL', 'https://api.x.ai/v1/chat/completions')
         if api_key:
             try:
+                messages_payload = [{"role": "system", "content": system_prompt}]
+                for h in chat_history:
+                    messages_payload.append({
+                        "role": "user" if h['role'] == 'user' else "assistant",
+                        "content": h['text']
+                    })
+                messages_payload.append({"role": "user", "content": user_prompt})
+
                 headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
                 payload = {
                     "model": "grok-beta",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                    "messages": messages_payload,
                     "temperature": 0.5
                 }
                 res = requests.post(api_url, headers=headers, json=payload, timeout=10)
@@ -124,37 +158,61 @@ Keep your response engaging, easy to follow, and directly relevant to the studen
             except Exception as e:
                 print(f"Chatbot Grok call error: {e}")
 
-
-        # Fallback intelligent tutor response engine
+        # Priority 3: Smart Dynamic Fallback Engine (Math, Conversational & Follow-up Aware)
         topic_str = context.get('topic_name', 'your subject')
-        weak_list = context.get('weak_areas', [])
-        weak_str = f" in concepts like {', '.join(weak_list)}" if weak_list else ""
+        q_clean = user_prompt.strip()
 
-        q_lower = user_prompt.lower()
+        # Check for simple arithmetic / math query (e.g. 1+1, 25 * 4, 100/5)
+        math_match = re.match(r'^[\d\s\+\-\*\/\.\(\)]+$', q_clean)
+        if math_match:
+            try:
+                # Safe simple eval for basic math expressions
+                allowed_chars = set("0123456789+-*/.() ")
+                if set(q_clean).issubset(allowed_chars):
+                    calc_res = eval(q_clean, {"__builtins__": None}, {})
+                    return f"**{q_clean} = {calc_res}** 🧮\n\nIs there a specific formula in **{topic_str}** you would like to plug numbers into?"
+            except Exception:
+                pass
+
+        q_lower = q_clean.lower()
+
+        # Check if user says hi / hello
+        if q_lower in ["hi", "hello", "hey", "hlo", "greetings"]:
+            if len(chat_history) > 0:
+                last_user_msg = chat_history[-2]['text'] if len(chat_history) >= 2 else ""
+                return f"Hey {context.get('student_name', 'there')}! I'm right here with you continuing our study on **{topic_str}**. What concept or formula should we tackle next?"
+            return f"Hello {context.get('student_name', 'Learner')}! Ready to master **{topic_str}**? Ask me any question, calculation, or practice hint!"
+
         if "why" in q_lower or "wrong" in q_lower or "explain" in q_lower:
+            weak_list = context.get('weak_areas', [])
+            weak_str = f" in concepts like {', '.join(weak_list)}" if weak_list else ""
             return (
-                f"Great question! When studying **{topic_str}**, precision is key{weak_str}. "
-                f"Here is a simple way to approach it:\n\n"
-                f"1. **Core Principle**: Identify the fundamental physical or technical law governing this topic.\n"
-                f"2. **Common Trap**: Watch out for unit conversions or subtle conceptual definitions.\n"
-                f"3. **Tip**: Try breaking the question into given data, formula/logic, and step-by-step substitution.\n\n"
-                f"Would you like me to give you a quick 1-question practice hint to test this?"
+                f"Great question about **{topic_str}**{weak_str}! Here is how to break it down:\n\n"
+                f"1. **Core Concept**: Identify the governing law or definition for {topic_str}.\n"
+                f"2. **Step-by-Step**: Substitute the given values into the formula accurately.\n"
+                f"3. **Verification**: Check if the physical/logical units match.\n\n"
+                f"Would you like me to give you a practice problem for this?"
             )
-        elif "practice" in q_lower or "question" in q_lower or "quiz" in q_lower:
+
+        if "practice" in q_lower or "question" in q_lower or "quiz" in q_lower:
             return (
-                f"Here is a targeted practice check for **{topic_str}**:\n\n"
-                f"**Question**: Which factor directly influences the result when working with key formulas in {topic_str}?\n"
-                f"A) Constant proportional scaling\n"
-                f"B) Inverse square relationship\n"
-                f"C) Temperature alone\n"
-                f"D) Neither of the above\n\n"
-                f"Reply with your option choice and I will evaluate it for you!"
+                f"Here is a quick practice check for **{topic_str}**:\n\n"
+                f"**Question**: In {topic_str}, what happens to output when the key variable doubles under linear conditions?\n"
+                f"A) Doubles proportionally\n"
+                f"B) Quadruples (squared)\n"
+                f"C) Decreases by half\n"
+                f"D) Remains unchanged\n\n"
+                f"Reply with your choice (A, B, C, or D)!"
             )
-        elif "hint" in q_lower:
-            return f"💡 **Hint for {topic_str}**: Focus on how the core variables depend on each other. Check whether the relationship is linear or exponential!"
-        else:
-            return (
-                f"Hello {context.get('student_name', 'Learner')}! I am your AI Coach for **{topic_str}**. "
-                f"Your current mastery level is **{context.get('mastery_score', 0)}%**. "
-                f"How can I help you prepare today? You can ask me to explain a concept, give a hint, or test you with a practice question."
-            )
+
+        if "hint" in q_lower:
+            return f"💡 **Hint for {topic_str}**: Check whether the relationship between key variables is linear or inversely proportional!"
+
+        # Conversational continuation referencing chat history
+        if len(chat_history) > 0:
+            return f"Got it! Following up on our discussion for **{topic_str}**: You mentioned *'{q_clean}'*. Let's analyze how this connects to key principles in your current level ({context.get('difficulty', 'easy')})."
+
+        return (
+            f"I hear you regarding **'{q_clean}'** in **{topic_str}**! "
+            f"How can I help you explore this concept further today?"
+        )

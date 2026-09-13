@@ -85,10 +85,10 @@ class AdaptiveEngine:
             "certification_threshold": 80.0
         }
 
-        # Try Grok LLM first
-        decision_data = cls._call_grok_api(payload_context)
+        # Try Gemini LLM first
+        decision_data = cls._call_gemini_api(payload_context)
 
-        # If Grok API fails or key is missing, run fallback deterministic engine
+        # If Gemini API fails or key is missing, run fallback deterministic engine
         if not decision_data:
             decision_data = cls._deterministic_fallback(payload_context)
 
@@ -130,15 +130,12 @@ class AdaptiveEngine:
         return adaptive_record
 
     @classmethod
-    def _call_grok_api(cls, context):
-        api_key = getattr(settings, 'GROK_API_KEY', '')
-        api_url = getattr(settings, 'GROK_API_URL', 'https://api.x.ai/v1/chat/completions')
-
-        if not api_key:
-            return None
+    def _call_gemini_api(cls, context):
+        from subjects.gemini_service import call_gemini_api
+        import re
 
         prompt = f"""
-You are the Grok Adaptive Learning Agent. Analyze the following student performance context and determine the next optimal learning step.
+You are the Gemini Adaptive Learning Agent for Lumo. Analyze the following student performance context and determine the next optimal learning step.
 
 Learner Context:
 {json.dumps(context, indent=2)}
@@ -160,29 +157,19 @@ Decision Rules:
 """
 
         try:
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "grok-beta",
-                "messages": [
-                    {"role": "system", "content": "You are an adaptive AI education decision engine. Return JSON only."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"}
-            }
-
-            response = requests.post(api_url, headers=headers, json=payload, timeout=10)
-            if response.status_code == 200:
-                res_json = response.json()
-                content = res_json['choices'][0]['message']['content']
-                parsed = json.loads(content)
+            res_text = call_gemini_api(prompt, system_instruction="You are an adaptive AI education decision engine. Output raw valid JSON object only, with no markdown codeblocks.", temperature=0.2)
+            if res_text:
+                clean_text = res_text.strip()
+                if clean_text.startswith("```"):
+                    clean_text = re.sub(r'^```json\s*|^```\s*|\s*```$', '', clean_text)
+                match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                if match:
+                    clean_text = match.group(0)
+                parsed = json.loads(clean_text)
                 if cls._validate_contract(parsed):
                     return parsed
         except Exception as e:
-            print(f"Grok API call exception: {e}")
+            print(f"Gemini Adaptive API call exception: {e}")
         
         return None
 
