@@ -120,10 +120,7 @@ def generate_questions_from_rag(topic, difficulty="easy", count=3, query=""):
     else:
         context_text = topic.description or f"General fundamentals of {topic.name}"
 
-    api_key = getattr(settings, 'GROK_API_KEY', '')
-    api_url = getattr(settings, 'GROK_API_URL', 'https://api.x.ai/v1/chat/completions')
-
-    if api_key and context_text:
+    if context_text:
         query_prompt = f"Focus Query: {query}\n" if query else ""
         system_prompt = f"""
 You are an expert educational assessment generator creating multiple-choice questions (MCQs) strictly grounded in the retrieved RAG study notes.
@@ -147,16 +144,33 @@ Each object must have the following keys:
 Output ONLY raw JSON array, no markdown wrap or extra commentary.
 """
 
-        try:
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            payload = {
-                "model": "grok-beta",
-                "messages": [{"role": "user", "content": system_prompt}],
-                "temperature": 0.3
-            }
-            res = requests.post(api_url, headers=headers, json=payload, timeout=15)
-            if res.status_code == 200:
-                raw_res = res.json()['choices'][0]['message']['content'].strip()
+        # Priority 1: Google Gemini API Call
+        from .gemini_service import call_gemini_api
+        gemini_response = call_gemini_api(system_prompt, system_instruction="Output valid JSON array of questions only.", temperature=0.3)
+        
+        raw_res = None
+        if gemini_response:
+            raw_res = gemini_response.strip()
+        else:
+            # Priority 2: Grok API Call
+            api_key = getattr(settings, 'GROK_API_KEY', '')
+            api_url = getattr(settings, 'GROK_API_URL', 'https://api.x.ai/v1/chat/completions')
+            if api_key:
+                try:
+                    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                    payload = {
+                        "model": "grok-beta",
+                        "messages": [{"role": "user", "content": system_prompt}],
+                        "temperature": 0.3
+                    }
+                    res = requests.post(api_url, headers=headers, json=payload, timeout=15)
+                    if res.status_code == 200:
+                        raw_res = res.json()['choices'][0]['message']['content'].strip()
+                except Exception as e:
+                    print(f"Grok question generation error: {e}")
+
+        if raw_res:
+            try:
                 if raw_res.startswith("```"):
                     raw_res = re.sub(r'^```json\s*|^```\s*|\s*```$', '', raw_res)
                 q_list = json.loads(raw_res)
@@ -173,9 +187,11 @@ Output ONLY raw JSON array, no markdown wrap or extra commentary.
                         concept_tag=qdata.get('concept_tag', topic.name)
                     )
                     created_questions.append(q_obj)
-                return created_questions
-        except Exception as e:
-            print(f"Grok question generation error: {e}")
+                if created_questions:
+                    return created_questions
+            except Exception as parse_err:
+                print(f"LLM JSON parsing error: {parse_err}")
+
 
     # Step 3: Intelligent RAG Fallback Generator based on retrieved chunks
     created_questions = []

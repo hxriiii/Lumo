@@ -83,27 +83,33 @@ class ChatView(APIView):
         })
 
     def _generate_ai_response(self, user_prompt, context):
-        api_key = getattr(settings, 'GROK_API_KEY', '')
-        api_url = getattr(settings, 'GROK_API_URL', 'https://api.x.ai/v1/chat/completions')
+        rag_str = "\n".join(context.get('rag_notes', []))
+        rag_context_prompt = f"\nRelevant RAG Study Notes Context:\n{rag_str}\n" if rag_str else ""
 
-        if api_key:
-            system_prompt = f"""
-You are the Grok AI Learning Coach, an empathetic, encouraging, and highly effective AI tutor.
+        system_prompt = f"""
+You are the Lumo Gemini AI Learning Coach, an empathetic, encouraging, and highly effective AI tutor companion.
 Student Name: {context.get('student_name')}
 Topic: {context.get('topic_name')} ({context.get('subject_name')})
-Topic Mastery: {context.get('mastery_score', 'N/A')}%
-Difficulty Level: {context.get('difficulty', 'N/A')}
+Topic Mastery Level: {context.get('mastery_score', 'N/A')}%
+Current Difficulty Level: {context.get('difficulty', 'N/A')}
 Identified Weak Areas: {', '.join(context.get('weak_areas', []))}
-
-Your goal: Provide clear, concise, step-by-step explanations, helpful hints, or tailored practice questions. 
-Keep your response engaging, easy to follow, and directly relevant to the student's question.
+{rag_context_prompt}
+Your goal: Provide clear, concise, step-by-step explanations, helpful hints, or tailored practice question hints based on the student's question and relevant study notes.
+Keep your response engaging, easy to follow, and directly relevant to the student's learning query.
 """
 
+        # Priority 1: Google Gemini API Call
+        from subjects.gemini_service import call_gemini_api
+        gemini_reply = call_gemini_api(user_prompt, system_instruction=system_prompt, temperature=0.5)
+        if gemini_reply:
+            return gemini_reply.strip()
+
+        # Priority 2: Grok API Call
+        api_key = getattr(settings, 'GROK_API_KEY', '')
+        api_url = getattr(settings, 'GROK_API_URL', 'https://api.x.ai/v1/chat/completions')
+        if api_key:
             try:
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
                 payload = {
                     "model": "grok-beta",
                     "messages": [
@@ -117,6 +123,7 @@ Keep your response engaging, easy to follow, and directly relevant to the studen
                     return res.json()['choices'][0]['message']['content']
             except Exception as e:
                 print(f"Chatbot Grok call error: {e}")
+
 
         # Fallback intelligent tutor response engine
         topic_str = context.get('topic_name', 'your subject')

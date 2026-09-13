@@ -2,54 +2,63 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from accounts.models import StudentProfile
 from subjects.models import Subject, Topic
-from exams.models import Question
 
 class Command(BaseCommand):
-    help = "Seed database with initial subjects, topics, MCQs, and demo users."
+    help = "Seed database with initial subjects, topics, and system accounts."
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("Starting database seeding..."))
 
-        # Create Demo Student User
+        # 1. Create System Admin User
+        admin_user, a_created = User.objects.get_or_create(
+            username="admin",
+            defaults={
+                "email": "admin@lumo.ai",
+                "first_name": "System",
+                "last_name": "Admin",
+                "is_staff": True,
+                "is_superuser": True
+            }
+        )
+        if a_created:
+            admin_user.set_password("adminpassword123")
+            admin_user.save()
+            a_profile, _ = StudentProfile.objects.get_or_create(user=admin_user)
+            a_profile.is_mentor = True
+            a_profile.save()
+            self.stdout.write(self.style.SUCCESS("Created System Admin user 'admin' (password: adminpassword123)"))
+        else:
+            admin_user.is_staff = True
+            admin_user.is_superuser = True
+            admin_user.set_password("adminpassword123")
+            admin_user.save()
+            self.stdout.write(self.style.SUCCESS("Updated System Admin user 'admin' (password: adminpassword123)"))
+
+        # 2. Create Demo Student User
         alex, created = User.objects.get_or_create(
             username="alex",
             defaults={
                 "email": "alex@example.com",
                 "first_name": "Alex",
                 "last_name": "Student",
-                "is_staff": False
+                "is_staff": False,
+                "is_superuser": False
             }
         )
         if created:
             alex.set_password("password123")
             alex.save()
             profile, _ = StudentProfile.objects.get_or_create(user=alex)
-            self.stdout.write(self.style.SUCCESS("Created demo user 'alex' (password: password123)"))
+            self.stdout.write(self.style.SUCCESS("Created demo student user 'alex' (password: password123)"))
 
-        # Create Demo Mentor User
-        mentor_user, m_created = User.objects.get_or_create(
-            username="mentor_prof",
-            defaults={
-                "email": "mentor@example.com",
-                "first_name": "Dr. Sarah",
-                "last_name": "Jenkins",
-                "is_staff": True
-            }
-        )
-        if m_created:
-            mentor_user.set_password("password123")
-            mentor_user.save()
-            m_profile, _ = StudentProfile.objects.get_or_create(user=mentor_user)
-            m_profile.is_mentor = True
-            m_profile.save()
-            self.stdout.write(self.style.SUCCESS("Created demo mentor 'mentor_prof' (password: password123)"))
+        # 3. Delete Chemistry if present
+        Subject.objects.filter(name="Chemistry").delete()
 
-        # Subjects
+        # 4. Initialize Core Subjects
         subjects_data = [
             {"name": "Physics", "icon": "Zap", "description": "Study of matter, energy, motion, and fundamental forces."},
             {"name": "Computer Science", "icon": "Code", "description": "Algorithms, data structures, and software architecture."},
             {"name": "Mathematics", "icon": "Calculator", "description": "Calculus, linear algebra, and mathematical logic."},
-            {"name": "Chemistry", "icon": "FlaskConical", "description": "Atomic structure, chemical reactions, and thermochemistry."},
         ]
 
         subject_objs = {}
@@ -61,7 +70,7 @@ class Command(BaseCommand):
         alex_profile = alex.profile
         alex_profile.selected_subjects.set([subject_objs["Physics"], subject_objs["Computer Science"], subject_objs["Mathematics"]])
 
-        # Topics
+        # 5. Initialize Topics
         topics_data = [
             # Physics
             {"subject": "Physics", "name": "Mechanics", "order": 1, "description": "Kinematics, Newton's laws, energy, and momentum."},
@@ -79,165 +88,8 @@ class Command(BaseCommand):
             {"subject": "Mathematics", "name": "Statistics", "order": 3, "description": "Probability distributions, hypothesis testing, and regression."},
         ]
 
-        topic_objs = {}
         for t in topics_data:
             sub = subject_objs[t["subject"]]
-            obj, _ = Topic.objects.get_or_create(subject=sub, name=t["name"], defaults={"order": t["order"], "description": t["description"]})
-            topic_objs[t["name"]] = obj
+            Topic.objects.get_or_create(subject=sub, name=t["name"], defaults={"order": t["order"], "description": t["description"]})
 
-        # Seed Questions for Electromagnetism (Physics)
-        em_topic = topic_objs["Electromagnetism"]
-        em_questions = [
-            # EASY
-            {
-                "difficulty": "easy",
-                "text": "Which law describes the linear relationship between voltage (V), current (I), and resistance (R)?",
-                "options": ["Newton's Law", "Ohm's Law", "Faraday's Law", "Coulomb's Law"],
-                "correct_answer": "Ohm's Law",
-                "explanation": "Ohm's Law states that V = I * R.",
-                "concept_tag": "Ohm's Law"
-            },
-            {
-                "difficulty": "easy",
-                "text": "What is the SI unit of electrical resistance?",
-                "options": ["Ampere", "Volt", "Ohm", "Watt"],
-                "correct_answer": "Ohm",
-                "explanation": "Resistance is measured in Ohms (Ω).",
-                "concept_tag": "Electrical Units"
-            },
-            {
-                "difficulty": "easy",
-                "text": "What device is used to measure electrical current in a circuit?",
-                "options": ["Voltmeter", "Ammeter", "Ohmmeter", "Barometer"],
-                "correct_answer": "Ammeter",
-                "explanation": "An ammeter measures electric current in Amperes.",
-                "concept_tag": "Electrical Instruments"
-            },
-            {
-                "difficulty": "easy",
-                "text": "If voltage across a 10 Ω resistor is 20 V, what current flows through it?",
-                "options": ["1 A", "2 A", "10 A", "200 A"],
-                "correct_answer": "2 A",
-                "explanation": "Using I = V / R = 20 V / 10 Ω = 2 A.",
-                "concept_tag": "Ohm's Law"
-            },
-
-            # MEDIUM
-            {
-                "difficulty": "medium",
-                "text": "Which law states that an induced electromotive force (EMF) is proportional to the rate of change of magnetic flux?",
-                "options": ["Ampere's Law", "Gauss's Law", "Faraday's Law of Induction", "Lenz's Law"],
-                "correct_answer": "Faraday's Law of Induction",
-                "explanation": "Faraday's Law states EMF = -dΦ/dt.",
-                "concept_tag": "Faraday's Law"
-            },
-            {
-                "difficulty": "medium",
-                "text": "Lenz's Law specifies which aspect of induced current?",
-                "options": ["Its magnitude only", "Its direction opposes the change in flux", "Its speed of propagation", "The resistance of the coil"],
-                "correct_answer": "Its direction opposes the change in flux",
-                "explanation": "Lenz's Law establishes conservation of energy by ensuring induced current opposes flux change.",
-                "concept_tag": "Magnetic Flux"
-            },
-            {
-                "difficulty": "medium",
-                "text": "What is the formula for magnetic flux (Φ) through a planar surface of area A in a uniform magnetic field B?",
-                "options": ["Φ = B / A", "Φ = B * A * cos(θ)", "Φ = B * I * L", "Φ = V / B"],
-                "correct_answer": "Φ = B * A * cos(θ)",
-                "explanation": "Magnetic flux is given by the dot product Φ = B · A = B A cos(θ).",
-                "concept_tag": "Magnetic Flux"
-            },
-            {
-                "difficulty": "medium",
-                "text": "A magnetic field of 0.5 T passes perpendicularly through a loop of area 2 m². What is the magnetic flux?",
-                "options": ["0.25 Wb", "1.0 Wb", "2.5 Wb", "4.0 Wb"],
-                "correct_answer": "1.0 Wb",
-                "explanation": "Φ = B * A * cos(0°) = 0.5 * 2 * 1 = 1.0 Weber.",
-                "concept_tag": "Magnetic Flux"
-            },
-
-            # HARD
-            {
-                "difficulty": "hard",
-                "text": "In Maxwell's equations, which term did Maxwell add to Ampere's Law to account for time-varying electric fields?",
-                "options": ["Displacement Current", "Conduction Current", "Eddy Current", "Lorentz Force"],
-                "correct_answer": "Displacement Current",
-                "explanation": "Maxwell introduced displacement current (ε₀ ∂E/∂t) to complete Maxwell-Ampere law.",
-                "concept_tag": "Maxwell Equations"
-            },
-            {
-                "difficulty": "hard",
-                "text": "What is the speed of electromagnetic waves in a vacuum derived from magnetic permeability μ₀ and electric permittivity ε₀?",
-                "options": ["c = μ₀ * ε₀", "c = 1 / sqrt(μ₀ * ε₀)", "c = sqrt(μ₀ / ε₀)", "c = μ₀ / ε₀"],
-                "correct_answer": "c = 1 / sqrt(μ₀ * ε₀)",
-                "explanation": "Maxwell showed light speed c = 1 / √(μ₀ε₀).",
-                "concept_tag": "Electromagnetic Waves"
-            },
-            {
-                "difficulty": "hard",
-                "text": "What vector represents the direction and rate of energy flux density of an electromagnetic field?",
-                "options": ["Poynting Vector", "Laplacian Vector", "Hamiltonian Vector", "Lorentz Vector"],
-                "correct_answer": "Poynting Vector",
-                "explanation": "The Poynting vector S = (1/μ₀) (E × B) represents electromagnetic power flux.",
-                "concept_tag": "Electromagnetic Energy"
-            }
-        ]
-
-        # Seed Questions for Mechanics (Physics)
-        mech_topic = topic_objs["Mechanics"]
-        mech_questions = [
-            # EASY
-            {
-                "difficulty": "easy",
-                "text": "What is Newton's Second Law of Motion expressed as an equation?",
-                "options": ["F = m * v", "F = m * a", "E = m * c²", "P = F / A"],
-                "correct_answer": "F = m * a",
-                "explanation": "Newton's second law states Force = mass × acceleration.",
-                "concept_tag": "Newton's Laws"
-            },
-            {
-                "difficulty": "easy",
-                "text": "What is the SI unit of force?",
-                "options": ["Joule", "Pascal", "Newton", "Watt"],
-                "correct_answer": "Newton",
-                "explanation": "Force is measured in Newtons (N).",
-                "concept_tag": "Units"
-            },
-            # MEDIUM
-            {
-                "difficulty": "medium",
-                "text": "An object of mass 5 kg accelerates at 4 m/s². What net force is applied?",
-                "options": ["1.25 N", "9 N", "20 N", "40 N"],
-                "correct_answer": "20 N",
-                "explanation": "F = m * a = 5 * 4 = 20 N.",
-                "concept_tag": "Kinematics"
-            },
-            # HARD
-            {
-                "difficulty": "hard",
-                "text": "In a completely inelastic collision between two identical masses, what percentage of kinetic energy is lost if one mass was initially at rest?",
-                "options": ["25%", "50%", "75%", "100%"],
-                "correct_answer": "50%",
-                "explanation": "Initial KE = 1/2 m v². Final velocity v_f = v/2. Final KE = 1/2 (2m) (v/2)² = 1/4 m v² (half of initial).",
-                "concept_tag": "Momentum & Energy"
-            }
-        ]
-
-        # Seed Data Structures (CS)
-        ds_topic = topic_objs["Data Structures"]
-        ds_questions = [
-            {"difficulty": "easy", "text": "What is the average time complexity for accessing an element in an array by index?", "options": ["O(1)", "O(n)", "O(log n)", "O(n²)"], "correct_answer": "O(1)", "explanation": "Array element access by index is constant time O(1).", "concept_tag": "Array Complexity"},
-            {"difficulty": "medium", "text": "Which data structure follows the Last-In-First-Out (LIFO) principle?", "options": ["Queue", "Stack", "Heap", "Tree"], "correct_answer": "Stack", "explanation": "A Stack operates on LIFO principle.", "concept_tag": "Stacks & Queues"},
-            {"difficulty": "hard", "text": "What is the worst-case lookup complexity in a balanced Red-Black Tree?", "options": ["O(1)", "O(log n)", "O(n)", "O(n log n)"], "correct_answer": "O(log n)", "explanation": "Balanced binary search trees guarantee O(log n) height.", "concept_tag": "Tree Structures"}
-        ]
-
-        for qdata in em_questions:
-            Question.objects.get_or_create(topic=em_topic, text=qdata["text"], defaults=qdata)
-
-        for qdata in mech_questions:
-            Question.objects.get_or_create(topic=mech_topic, text=qdata["text"], defaults=qdata)
-
-        for qdata in ds_questions:
-            Question.objects.get_or_create(topic=ds_topic, text=qdata["text"], defaults=qdata)
-
-        self.stdout.write(self.style.SUCCESS("Database seeding completed successfully!"))
+        self.stdout.write(self.style.SUCCESS("Database seeding completed successfully! Admin: admin | Password: adminpassword123"))

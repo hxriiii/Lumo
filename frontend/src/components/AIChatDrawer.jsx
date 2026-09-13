@@ -85,13 +85,13 @@ export const AIChatDrawer = ({ isOpen, onClose, topicId, topicName }) => {
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <h3 className="font-display font-bold text-slate-900 text-lg">Lumo AI Companion</h3>
-                  <span className="bg-white text-slate-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-slate-900">
-                    ONLINE
+                  <h3 className="font-display font-bold text-slate-900 text-lg">Lumo Gemini AI Companion</h3>
+                  <span className="bg-[#A78BFA] text-slate-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-slate-900 shadow-[1px_1px_0px_0px_#1E293B]">
+                    GEMINI 2.5 FLASH
                   </span>
                 </div>
                 <p className="text-xs text-slate-800 font-semibold">
-                  {topicName ? `Topic: ${topicName}` : 'Your Friendly Study Buddy!'}
+                  {topicName ? `Topic: ${topicName}` : 'Your AI Study Tutor!'}
                 </p>
               </div>
             </div>

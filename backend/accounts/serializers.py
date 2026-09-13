@@ -7,7 +7,7 @@ from subjects.models import Subject
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'is_superuser']
 
 class StudentProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
@@ -15,10 +15,12 @@ class StudentProfileSerializer(serializers.ModelSerializer):
     selected_subject_ids = serializers.PrimaryKeyRelatedField(
         queryset=Subject.objects.all(), many=True, write_only=True, source='selected_subjects'
     )
+    is_admin = serializers.BooleanField(source='user.is_staff', read_only=True)
 
     class Meta:
         model = StudentProfile
-        fields = ['id', 'user', 'selected_subjects', 'selected_subject_ids', 'is_mentor', 'created_at']
+        fields = ['id', 'user', 'selected_subjects', 'selected_subject_ids', 'is_mentor', 'is_admin', 'created_at']
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)

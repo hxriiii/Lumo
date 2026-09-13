@@ -111,3 +111,8 @@ CORS_ALLOW_ALL_ORIGINS = True
 # Grok API configuration
 GROK_API_KEY = os.getenv('GROK_API_KEY', '')
 GROK_API_URL = os.getenv('GROK_API_URL', 'https://api.x.ai/v1/chat/completions')
+
+# Gemini API configuration (Google AI Companion)
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', os.getenv('GOOGLE_API_KEY', ''))
+GEMINI_API_URL = os.getenv('GEMINI_API_URL', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent')
+

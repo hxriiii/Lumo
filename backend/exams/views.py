@@ -31,15 +31,27 @@ class StartTestView(APIView):
         if not request.data.get('difficulty'):
             difficulty = progress.current_difficulty
 
-        # Query matching questions
+        # Query matching questions from question bank
         matching_questions = list(Question.objects.filter(topic=topic, difficulty=difficulty))
         
-        # Fallback to any difficulty questions if not enough matching
+        # If question bank is empty or has fewer than 3 questions for this topic/difficulty,
+        # AUTO-GENERATE questions on the fly using RAG notes context!
         if len(matching_questions) < 3:
+            from subjects.rag_service import generate_questions_from_rag
+            try:
+                # Generate 5 questions for requested difficulty and save to bank
+                auto_qs = generate_questions_from_rag(topic, difficulty=difficulty, count=5)
+                matching_questions = list(Question.objects.filter(topic=topic, difficulty=difficulty))
+            except Exception as e:
+                print(f"Auto RAG question generation error: {e}")
+
+        # Fallback to any difficulty questions in bank if needed
+        if not matching_questions:
             matching_questions = list(Question.objects.filter(topic=topic))
 
         if not matching_questions:
-            return Response({'error': f'No questions available for topic {topic.name}'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'No questions could be generated or found for topic {topic.name}'}, status=status.HTTP_400_BAD_REQUEST)
+
 
         # Take up to 10 questions
         selected = matching_questions[:10]

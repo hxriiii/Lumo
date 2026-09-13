@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Sparkles, ArrowRight, KeyRound, UserCheck, Smile } from 'lucide-react';
+import { Sparkles, ArrowRight, KeyRound, UserCheck, Shield } from 'lucide-react';
 
 export const Login = () => {
   const [username, setUsername] = useState('');
@@ -16,8 +16,16 @@ export const Login = () => {
     setError('');
     setLoading(true);
     try {
-      await login(username, password);
-      navigate('/dashboard');
+      const res = await login(username, password);
+      const u = res?.user;
+      const p = res?.profile;
+      if (u?.is_staff || p?.is_admin) {
+        navigate('/admin');
+      } else if (p?.is_mentor) {
+        navigate('/mentor');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       console.error(err);
       setError('Invalid username or password');
@@ -29,6 +37,11 @@ export const Login = () => {
   const handleDemoStudent = () => {
     setUsername('alex');
     setPassword('password123');
+  };
+
+  const handleDemoAdmin = () => {
+    setUsername('admin');
+    setPassword('adminpassword123');
   };
 
   const handleDemoMentor = () => {
@@ -88,7 +101,7 @@ export const Login = () => {
               disabled={loading}
               className="w-full py-3.5 px-4 bg-[#FFD12E] hover:bg-[#F0C21A] text-slate-900 font-extrabold rounded-2xl border-2 border-slate-900 shadow-[3px_3px_0px_0px_#1E293B] active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-2 text-sm"
             >
-              {loading ? 'Signing in...' : 'Sign In & Learn'}
+              {loading ? 'Signing in...' : 'Sign In & Enter Portal'}
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
@@ -97,22 +110,30 @@ export const Login = () => {
             <p className="text-[11px] text-slate-500 font-extrabold mb-3 text-center uppercase tracking-wider">
               ⚡ Quick Demo Shortcuts
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={handleDemoStudent}
-                className="px-3 py-2.5 bg-[#38BDF8] hover:bg-sky-400 text-slate-900 border-2 border-slate-900 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_#1E293B] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                className="px-2.5 py-2.5 bg-[#38BDF8] hover:bg-sky-400 text-slate-900 border-2 border-slate-900 rounded-2xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-[2px_2px_0px_0px_#1E293B] active:translate-x-0.5 active:translate-y-0.5 transition-all"
               >
-                <KeyRound className="w-4 h-4" />
-                Demo Student
+                <KeyRound className="w-3.5 h-3.5" />
+                Student
+              </button>
+              <button
+                type="button"
+                onClick={handleDemoAdmin}
+                className="px-2.5 py-2.5 bg-[#A78BFA] hover:bg-purple-400 text-slate-900 border-2 border-slate-900 rounded-2xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-[2px_2px_0px_0px_#1E293B] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                Admin
               </button>
               <button
                 type="button"
                 onClick={handleDemoMentor}
-                className="px-3 py-2.5 bg-[#FF6B6B] hover:bg-rose-400 text-white border-2 border-slate-900 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_#1E293B] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                className="px-2.5 py-2.5 bg-[#FF6B6B] hover:bg-rose-400 text-white border-2 border-slate-900 rounded-2xl text-[11px] font-extrabold flex items-center justify-center gap-1 shadow-[2px_2px_0px_0px_#1E293B] active:translate-x-0.5 active:translate-y-0.5 transition-all"
               >
-                <UserCheck className="w-4 h-4" />
-                Demo Mentor
+                <UserCheck className="w-3.5 h-3.5" />
+                Mentor
               </button>
             </div>
           </div>
@@ -129,3 +150,4 @@ export const Login = () => {
   );
 };
 
+export default Login;
